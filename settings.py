@@ -1,82 +1,32 @@
 from os import environ
-from global_constants import TREATMENT, ROLE
 prolific_options = dict(for_prolific=False,
                         prolific_redirect_url='https://app.prolific.co/submissions/complete?cc=7C68BD7C',
                         for_toloka=True)
 SESSION_CONFIGS = [
     dict(
-        name='baseline_r',
-        display_name='Baseline - Recipient',
-        app_sequence=['polar'],
-        num_demo_participants=2,
-        reveal=False,
-        role=ROLE.RECIPIENT,
-        treatment=TREATMENT.BASELINE,
-        **prolific_options
-    ),
-
-    dict(
-        name='recipient_reveal_r',
-        display_name='Recipient Reveal - Recipient',
+        name='reveal_after',
         app_sequence=['polar'],
         num_demo_participants=2,
         reveal=True,
-        role=ROLE.RECIPIENT,
-        treatment=TREATMENT.VL,
+        before=False,
         **prolific_options
     ),
-    dict(
-        name='baseline_d',
-        display_name='Baseline - Dictator',
-        app_sequence=['polar'],
-        num_demo_participants=2,
-        reveal=False,
-        role=ROLE.DICTATOR,
-        treatment=TREATMENT.BASELINE,
-        **prolific_options
-    ),
-    dict(
-        name='recipient_reveal_d',
-        display_name='Recipient Reveal - Dictator',
-        app_sequence=['polar'],
-        num_demo_participants=2,
-        reveal=False,
-        role=ROLE.DICTATOR,
-        treatment=TREATMENT.VL,
-        partner_position_shown=True,
-        counter_yes=5,
-        counter_no=0,
-        counter_nr=4,
-        **prolific_options
-    ),
-
     dict(
         name='reveal_before',
-        display_name='Reveal Before - Dictator',
         app_sequence=['polar'],
         num_demo_participants=2,
         reveal=True,
-        role=ROLE.DICTATOR,
-        treatment=TREATMENT.RB,
-        counter_yes=50,
-        counter_no=50,
-        counter_nr=0,
+        before=True,
         **prolific_options
     ),
     dict(
         name='forced_reveal',
-        display_name='Forced Reveal - Dictator',
         app_sequence=['polar'],
         num_demo_participants=2,
         reveal=False,
-        role=ROLE.DICTATOR,
-        treatment=TREATMENT.FR,
-        counter_yes=50,
-        counter_no=50,
-        counter_nr=0,
+        before=False,
         **prolific_options
     ),
-
 ]
 
 # if you set a property in SESSION_CONFIG_DEFAULTS, it will be inherited by all configs

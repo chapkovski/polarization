@@ -1,12 +1,9 @@
 from otree.api import Page as oTreePage
 from .choices import *
 from .models import *
-from .constants import C, POSITION, TREATMENT
+from .constants import Constants
 from pprint import pprint
 from starlette.responses import RedirectResponse
-import json
-import random
-import numpy as np
 
 
 class Page(oTreePage):
@@ -21,11 +18,6 @@ class Page(oTreePage):
         return r
 
 
-class UnBlockedPage(Page):
-    def _is_displayed(self):
-        return not self.player.blocked and super()._is_displayed()
-
-
 class Consent(Page):
     pass
 
@@ -34,31 +26,19 @@ class OpinionIntro(Page):
     pass
 
 
-class Opinion(Page):
+class Opinion1(Page):
     form_model = 'player'
-    form_fields = ['opinion_war']
-
-    @staticmethod
-    def before_next_page(player: Player, timeout_happened):
-        if player.opinion_war == 1:
-            c = random.sample(INTENSITY_YES_CHOICES, 2)
-            player.opinion_intensity_order = json.dumps(c)
-        else:
-            c = random.sample(INTENSITY_NO_CHOICES, 2)
-            player.opinion_intensity_order = json.dumps(c)
+    form_fields = ['opinion_competition']
 
 
-class OpinionIntensity(Page):
+class Opinion2(Page):
     form_model = 'player'
-    form_fields = ['opinion_intensity']
+    form_fields = ['opinion_lgbt']
 
-    @staticmethod
-    def vars_for_template(player: Player):
-        if player.opinion_war:
-            label = 'Скажите, пожалуйста, насколько Вы поддерживаете действия российских вооруженных сил на Украине?'
-        else:
-            label = 'Скажите, пожалуйста, насколько Вы не поддерживаете действия российских вооруженных сил на Украине?'
-        return dict(label=label)
+
+class Opinion3(Page):
+    form_model = 'player'
+    form_fields = ['opinion_covid']
 
 
 class GeneralInstructions(Page):
@@ -71,151 +51,119 @@ class DecisionInstructions(Page):
 
 class DGComprehensionCheck(Page):
     instructions = True
+    form_model = 'player'
+    form_fields = ['cq1_ego',
+                   'cq1_alter',
+                   'cq2_ego',
+                   'cq2_alter',
+                   'cq3_ego',
+                   'cq3_alter']
 
-    def post(self):
-        if not bool(self._form_data):
-            return super().post()
-        if self._form_data.get('timeout_happened'):
-            return super().post()
+    def form_invalid(self, form):
+        self.player.cq_err_counter += 1
+        if self.player.cq_err_counter > Constants.MAX_CQ_ATTEMPTS:
+            self.player.blocked = True
+            return
+        return super().form_invalid(form)
 
-        survey_data = json.loads(self._form_data.get('surveyholder'))
-
-        for k, v in survey_data.items():
-            try:
-                setattr(self.player, k, int(v))
-            except AttributeError:
-                pass
-        return super().post()
-
-
-class PreDecision(UnBlockedPage):
     @staticmethod
-    def before_next_page(player: Player, timeout_happened):
-        s = player.subsession
-        p = player
-        """
-        what we do here:
-         there are four different treatments for dictators.
-          - Baseline - where position is not shown.
-          - FR, RB: Forced reveal and reveal_before where position is shown non depending of the wish of the R
-          - VL - where position is shown depending on the wish of the R
-          if we are in the baseline we don't need partner's position
-          if we in the FL or RB then we need to take into account only the yes and no counters. and values 
-          that partner_position may take is either yes or no. 
-          if we are in VL then the partner_position can be either yes, no or nr (non-reveal).
-          if the total number of Ds matched with Yes exceeds the num_yes, and those matched with No exceeds the num_no,
-          then we assign a baseline treatment to the rest. That's to deal with dropouts.
-          
-           
-          
-        """
-        # we do not assign partner positions to a treatment baseline because we don't care about the matching for them
-        if player.role == 'dictator' and player.treatment != TREATMENT.BASELINE:
-            weights = s.get_weights()
-
-            if weights:
-                p.partner_position = np.random.choice(list(weights.keys()), p=list(weights.values()))
-            else:
-                p.treatment = TREATMENT.BASELINE
+    def vars_for_template(player: Player):
+        return dict(attempts=Constants.MAX_CQ_ATTEMPTS - player.cq_err_counter)
 
 
-class InfoStage1(UnBlockedPage):
+class Blocked(Page):
+    @staticmethod
+    def is_displayed(player: Player):
+        return player.blocked
+
+
+class InfoStage1(Page):
     instructions = True
     form_model = 'player'
 
     @staticmethod
     def get_form_fields(player: Player):
-        if player.treatment == TREATMENT.RB:
-            return ['dictator_reveal']
+        if player.subsession.treatment == 'reveal_before':
+            return ['reveal']
 
     @staticmethod
     def is_displayed(player: Player):
-        return player.role == ROLE.DICTATOR and player.treatment != TREATMENT.BASELINE
+        return player.subsession.treatment != 'reveal_after'
 
 
-class InfoStage2(UnBlockedPage):
+class InfoStage2(Page):
     instructions = True
 
     @staticmethod
     def is_displayed(player: Player):
-        return player.role == ROLE.DICTATOR and player.treatment != TREATMENT.BASELINE
+        return player.subsession.treatment != 'reveal_after'
 
 
-class RecipientReveal(UnBlockedPage):
-    instructions = True
-    form_model = 'player'
-    form_fields = ['recipient_reveal']
-
-    @staticmethod
-    def is_displayed(player: Player):
-        return player.role == ROLE.RECIPIENT and player.treatment == TREATMENT.VL
-
-
-class DecisionStage(UnBlockedPage):
+class DecisionStage(Page):
     instructions = True
     form_model = 'player'
     form_fields = ['dg_decision']
 
+
+class RevealAfterStage1(Page):
+    form_model = 'player'
+    form_fields = ['reveal']
+
     @staticmethod
     def is_displayed(player: Player):
-        return player.role == ROLE.DICTATOR
+        return player.subsession.treatment == 'reveal_after'
 
 
-class Reasons(UnBlockedPage):
+class RevealAfterStage2(Page):
+    @staticmethod
+    def is_displayed(player: Player):
+        return player.subsession.treatment == 'reveal_after'
+
+
+class Reasons(Page):
     form_model = 'player'
 
     def get_form_fields(player: Player):
-
-        if player.role == ROLE.DICTATOR:
-            l = ['reason_dg', ]
-            if player.treatment == TREATMENT.RB:
-                l = l + ['reason_reveal_d', ]
-        else:
-            l = ['reason_dg_r']
-            if player.treatment == TREATMENT.VL:
-                l.append('reason_reveal_r')
+        l = ['reason_dg', 'keyword_dg_1', 'keyword_dg_2', 'keyword_dg_3']
+        revl = ['reason_reveal', 'keyword_rev_1', 'keyword_rev_2', 'keyword_rev_3']
+        if player.session.config.get('reveal'):
+            return l + revl
         return l
 
 
-class BeliefsIntro(UnBlockedPage):
+class BeliefsIntro(Page):
     pass
 
 
-class Beliefs(UnBlockedPage):
+class Beliefs(Page):
     form_model = 'player'
 
     @staticmethod
     def get_form_fields(player: Player):
-        if player.role == ROLE.DICTATOR:
-            l =  ['average_dg_belief']
-        if player.role == ROLE.RECIPIENT:
-            l =  ['own_dg_belief']
+        if player.subsession.treatment == 'reveal_after':
+            return ['dg_belief_ra', 'reveal_belief']
+        if player.subsession.treatment == 'reveal_before':
+            return [
+                'dg_belief_rb_nonrev',
+                'dg_belief_rb_rev_diff',
+                'dg_belief_rb_rev_same',
+                'reveal_belief'
+            ]
+        if player.subsession.treatment == 'forced_reveal':
+            return [
+
+                'dg_belief_fr_diff',
+                'dg_belief_fr_same',
+
+            ]
 
 
-        return l
-
-class Beliefs2(UnBlockedPage):
-    form_model = 'player'
-
-    @staticmethod
-    def is_displayed(player: Player):
-        print('*'*100)
-        print(player.treatment)
-        print('*'*100)
-        return player.treatment == TREATMENT.VL
-    @staticmethod
-    def get_form_fields(player: Player):
-        return ['vl_pro_belief','vl_contra_belief']
-
-
-
-
-class Proportions(UnBlockedPage):
+class Proportions(Page):
     form_model = 'player'
     form_fields = ['proportion']
 
 
-class InformationAvoidanceScale(UnBlockedPage):
+class InformationAvoidanceScale(Page):
     def post(self):
         survey_data = json.loads(self._form_data.get('surveyholder'))
 
@@ -225,13 +173,12 @@ class InformationAvoidanceScale(UnBlockedPage):
         return super().post()
 
 
-class SocialDistanceIndex(UnBlockedPage):
+class SocialDistanceIndex(Page):
     def vars_for_template(player: Player):
         return dict(reverted_opinion=player.reverted_opinion,
                     reverted_opinion_single=player.reverted_opinion_single)
 
     def post(self):
-        print('aaaa', self._form_data)
         survey_data = json.loads(self._form_data.get('surveyholder'))
 
         for k, v in survey_data.items():
@@ -240,7 +187,16 @@ class SocialDistanceIndex(UnBlockedPage):
         return super().post()
 
 
-class RiskAttitudes(UnBlockedPage):
+class SocialCuriosityScale(Page):
+    def post(self):
+        survey_data = json.loads(self._form_data.get('surveyholder'))
+        attitudes = survey_data.get('scs')
+        for k, v in attitudes.items():
+            setattr(self.player, k, v.get('scs'))
+        return super().post()
+
+
+class RiskAttitudes(Page):
     def post(self):
         survey_data = json.loads(self._form_data.get('surveyholder'))
         risk_attitudes = survey_data.get('risk_attitudes')
@@ -251,70 +207,71 @@ class RiskAttitudes(UnBlockedPage):
         return super().post()
 
 
-class Demographics(UnBlockedPage):
-    def post(self):
-        survey_data = json.loads(self._form_data.get('surveyholder'))
-        pprint(survey_data)
-        multi_ses = survey_data.pop('multi_ses', [])
-
-        for k, v in survey_data.items():
-            try:
-                setattr(self.player, k, int(v))
-            except AttributeError:
-                pass
-
-        for i in multi_ses:
-            try:
-                setattr(self.player, i, True)
-            except AttributeError:
-                pass
-        return super().post()
+import json
 
 
-class Demand(UnBlockedPage):
+class Demographics(Page):
+    form_model = 'player'
+    form_fields = ["religion",
+                   "political",
+                   "age",
+                   "education",
+                   "gender",
+                   "marital",
+                   "employment",
+                   "income", ]
+
+
+class Demand(Page):
     form_model = 'player'
     form_fields = ["demand", 'instructions_clarity']
 
     @staticmethod
     def before_next_page(player: Player, timeout_happened):
         player.payable = True
+        player.payoff = Constants.DICTATOR_ENDOWMENT - player.dg_decision
+        player.aligned = player.opinion_lgbt == player.partner_position
 
 
-class FinalForToloka(UnBlockedPage):
+class FinalForProlific(Page):
+    def is_displayed(self):
+        return self.session.config.get('for_prolific')
+
+    def get(self):
+        return RedirectResponse(self.session.config.get('prolific_redirect_url'))
+
+
+class FinalForToloka(Page):
     @staticmethod
     def is_displayed(player: Player):
         return player.session.config.get('for_toloka') and not player.blocked
 
 
-class Blocked(Page):
-    @staticmethod
-    def is_displayed(player: Player):
-        return player.blocked
-
-
 page_sequence = [
     Consent,
     OpinionIntro,
-    Opinion,
-    OpinionIntensity,
+    Opinion1,
+    Opinion2,
+    Opinion3,
     GeneralInstructions,
     DecisionInstructions,
     DGComprehensionCheck,
-    PreDecision,
+    Blocked,
     InfoStage1,
     InfoStage2,
-    RecipientReveal,
     DecisionStage,
-    BeliefsIntro,
-    Proportions,
-    Beliefs,
-    Beliefs2,
+    RevealAfterStage1,
+    RevealAfterStage2,
     Reasons,
+    BeliefsIntro,
+    Beliefs,
+    Proportions,
     InformationAvoidanceScale,
+    SocialCuriosityScale,
     SocialDistanceIndex,
     RiskAttitudes,
     Demographics,
     Demand,
     FinalForToloka,
-    Blocked,
+
 ]

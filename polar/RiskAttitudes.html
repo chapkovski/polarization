@@ -24,8 +24,7 @@
         .StylesManager
         .applyTheme("bootstrap");
 
-    var json = {
-        showCompletedPage: false,
+    var json = {showCompletedPage:false,
         questions: [
             {
                 hideNumber: true,
@@ -36,24 +35,27 @@
                 "columns": [
                     {
                         name: "risk_attitudes",
-                        title: 'Для ответа выберите значение по шкале от 0 до 10, где 0 означает, что вы "совсем не готовы рисковать", а 10 означает, что вы "очень готовы рисковать".',
+                        title: 'Для ответа выберите значение по шкале от 0 до 10, где 0 означает, что вы "совсем не готовы рисковать", а 10 означает, что вы "очень готовы рисковать.',
                         cellType: "rating",
                         "rateMin": 0,
                         "rateMax": 10,
                         isRequired: true,
-                        requiredErrorText: {{C.REQUIRED_MSG|json}},
+                    requiredErrorText: {{Constants.REQUIRED_MSG|json}},
                     },
                 ],
                 "rows": [
                     {value: "risk_general", text: 'В целом'},
                     {value: "risk_financial_matters", text: 'В финансовых вопросах'},
+                    {value: "risk_free", text: 'В свободное время и во время занятий спортом'},
+                    {value: "risk_profession", text: 'В вашей профессии'},
+                    {value: "risk_health", text: 'В том что касается вашего здоровья'},
                     {value: "risk_strangers", text: 'В отношениях с незнакомыми людьми'},
-
+                    {value: "risk_driving", text: 'Во время езды за рулем'},
 
                 ]
             }
         ],
-        "completeText": {{C.NEXT_BTN|json}}
+        "completeText": {{Constants.NEXT_BTN|json}}
     };
 
     window.survey = new Survey.Model(json);

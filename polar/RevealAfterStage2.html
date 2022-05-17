@@ -8,7 +8,7 @@
     <div class="card-body">
         <div class="card-text">
             <ul class="list-group list-group-flush">
-                {% if player.field_maybe_none('reveal') or subsession.treatment == 'forced_reveal' %}
+                {% if player.field_maybe_none('reveal')  %}
 
 
                     <li class="list-group-item">
@@ -22,7 +22,7 @@
                         {{ Constants.privacy_note }}
                     </li>
                 {% endif %}
-                <li class="list-group-item">Нажмите "Далее", чтобы продолжить
+                <li class="list-group-item">Нажмите "Далее", чтобы продолжить.
                 </li>
         </div>
     </div>

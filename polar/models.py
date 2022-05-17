@@ -1,6 +1,6 @@
 from otree.api import *
 from .choices import *
-from .constants import C, POSITION, TREATMENT, ROLE
+from .constants import Constants
 import json
 import itertools
 import random
@@ -13,68 +13,20 @@ f = lambda x: f'{(x / 100):.2f}$'
 
 
 class Subsession(BaseSubsession):
-    partner_position_shown = models.BooleanField()  # can we show at least theoretically partner's position; is true for all but baseline treatment for Ds
-    counter_yes = models.IntegerField()  # Count number of recipieints who agreed to show their YES opinion
-    counter_no = models.IntegerField()  # Count number of recipieints who agreed to show their NO opinion
-    counter_nr = models.IntegerField()  # Count number of recipieints who DID NOT agree to show their opinion
-    take_nrs = models.BooleanField()  # do we take into account those who do not want to agree
-
-    def get_weights(self):
-
-        counter = {
-            POSITION.YES.value: self.player_set.filter_by(partner_position=POSITION.YES).count(),
-            POSITION.NO.value: self.player_set.filter_by(partner_position=POSITION.NO).count(),
-            POSITION.NR.value: self.player_set.filter_by(partner_position=POSITION.NR).count()
-        }
-
-        maxnum = {
-            POSITION.YES.value: self.counter_yes,
-            POSITION.NO.value: self.counter_no,
-            POSITION.NR.value: self.counter_nr
-        }
-        if self.take_nrs:
-            potential_positions = C.POSITIONS_YNR
-        else:
-            potential_positions = C.POSITIONS_YES_NO
-        weights = {}
-        for i in potential_positions:
-            weights[i] = max(0, maxnum[i] - counter[i])
-        if all([i == 0 for i in weights.values()]):
-            return
-        tot_values = sum( weights.values())
-        for k,v in weights.items():
-            weights[k] = v/tot_values
-
-        return weights
+    treatment = models.StringField()
 
 
-def creating_session(subsession: Subsession):
-    conf = subsession.session.config
-    treatment = conf.get('treatment')
-    assert TREATMENT.has_value(treatment), 'something wrong with treatment name setting'
-    role = conf.get('role')
-    assert ROLE.has_value(role), 'something wrong with treatment role setting'
+def creating_session(subsession):
+    subsession.treatment = subsession.session.config.get('name')
     orders = [False, True]
-    if role == ROLE.DICTATOR:
-        endowments = dict(ego_endowment=C.DICTATOR_ENDOWMENT, alter_endowment=C.BASIC_ENDOWMENT)
-    else:
-        endowments = dict(ego_endowment=C.BASIC_ENDOWMENT, alter_endowment=C.DICTATOR_ENDOWMENT)
-    player_updates = dict(_role=role, treatment=treatment, )
-    player_updates.update(endowments)
-    subsession.player_set.update(player_updates)
-    #
-    subsession.take_nrs = treatment == TREATMENT.VL
-    subsession.partner_position_shown = treatment != TREATMENT.BASELINE
-    subsession.counter_no = conf.get('counter_no', 0)
-    subsession.counter_yes = conf.get('counter_yes', 0)
-    subsession.counter_nr = conf.get('counter_nr', 0)
-    if treatment != TREATMENT.VL:
-        assert subsession.counter_nr == 0, 'Check NR counter and treatment'
+    partner_positions = itertools.cycle([False, True])
+
     for p in subsession.get_players():
         c = sorted(REVEAL_CHOICES, key=lambda x: x[0], reverse=random.choice(orders))
         p.reveal_order = json.dumps(c)
-        c = random.sample(OPINION_CHOICES, 2)
-        p.opinion_war_order = json.dumps(c)
+        p.partner_position = next(partner_positions)
+        p.egoendowment = Constants.DICTATOR_ENDOWMENT
+        p.alterendowment = Constants.BASIC_ENDOWMENT
 
 
 class Group(BaseGroup):
@@ -85,34 +37,12 @@ def reveal_choices(player):
     return json.loads(player.reveal_order)
 
 
-def opinion_war_choices(player):
-    return json.loads(player.opinion_war_order)
-
-
-def opinion_intensity_choices(player):
-    return json.loads(player.opinion_intensity_order)
-
-
 class Player(BasePlayer):
-    def role_desc(self):
-        if self.role == ROLE.DICTATOR:
-            return 'А'
-        else:
-            return 'Б'
-
-    treatment = models.StringField()
-    _role = models.StringField()
-    opinion_war_order = models.StringField()
-    opinion_intensity_order = models.StringField()
-    opinion_war = models.BooleanField(
-        label=C.AGREEMENT_QUESTION,
-    )
-    opinion_intensity = models.BooleanField()
-    partner_show = models.BooleanField()
-    partner_position = models.StringField()
+    # Main vars
+    opinion_lgbt = models.BooleanField(choices=OPINION_CHOICES, widget=widgets.RadioSelectHorizontal, label='')
+    partner_position = models.BooleanField()
     aligned = models.BooleanField()
-    dictator_reveal = models.BooleanField()
-    recipient_reveal = models.BooleanField()
+    reveal = models.BooleanField()
     dg_decision = models.IntegerField(widget=widgets.RadioSelectHorizontal)
     payable = models.BooleanField()
     cq_err_counter = models.IntegerField(initial=0)
@@ -143,8 +73,8 @@ class Player(BasePlayer):
 
         res = []
         for i in _choices:
-            res.append(dict(decision=i[1], ego=f(C.DICTATOR_ENDOWMENT - i[0]),
-                            alter=f(C.BASIC_ENDOWMENT + i[0]),
+            res.append(dict(decision=i[1], ego=f(Constants.DICTATOR_ENDOWMENT - i[0]),
+                            alter=f(Constants.BASIC_ENDOWMENT + i[0]),
                             label=conv(i[0])))
         return res
 
@@ -153,20 +83,23 @@ class Player(BasePlayer):
 
     @property
     def reverted_opinion(self):
-        no_option = 'не'
         try:
-            return no_option if (self.opinion_war) else ''
+            return 'не согласны' if (self.opinion_lgbt) else 'согласны'
         except TypeError:
-
             # just for debugging
-            return no_option
+            return 'не согласны'
 
     def reverted_opinion_single(self):
         try:
-            return 'не согласен' if (self.opinion_war) else 'согласен'
+            return 'не согласен' if (self.opinion_lgbt) else 'согласен'
         except TypeError:
             # just for debugging
             return 'не согласен'
+
+    opinion_competition = models.BooleanField(choices=OPINION_CHOICES, widget=widgets.RadioSelectHorizontal,
+                                              label='')
+
+    opinion_covid = models.BooleanField(choices=OPINION_CHOICES, widget=widgets.RadioSelectHorizontal, label='')
 
     risk_general = models.IntegerField()
     risk_financial_matters = models.IntegerField()
@@ -175,73 +108,78 @@ class Player(BasePlayer):
     risk_health = models.IntegerField()
     risk_strangers = models.IntegerField()
     risk_driving = models.IntegerField()
-    sdi_politics_pro = models.StringField()
-    sdi_politics_contra = models.StringField()
-    sdi_family_pro = models.StringField()
-    sdi_family_contra = models.StringField()
+    sdi_politics = models.StringField()
+    sdi_neighbors = models.StringField()
+    sdi_friends = models.StringField()
+    sdi_family = models.StringField()
+    scs_habits = models.IntegerField()
+    scs_why = models.IntegerField()
+    scs_conversation = models.IntegerField()
+    scs_listening = models.IntegerField()
+    scs_quarrel = models.IntegerField()
     ias_friend = models.StringField()
     ias_coworker = models.StringField()
     ias_stranger = models.StringField()
     # REASONS
-    reason_dg_r = models.LongStringField(label='Как вы думаете, чем будет руководствоваться Участник А принимая решение о том отдавать или брать деньги у участника Б (вас)?')  # reasons for recipieint beliefs of dictators decision
-    reason_reveal_r = models.LongStringField(
-    label=
-    """Вспомните, пожалуйста, ваше решение относительно того, сообщать или не сообщать участнику А о вашей поддержке или не поддержке действий российских вооруженных сил на Украине. 
-    Чем вы руководствовались при принятии вашего решения?"""
-    )
-
     reason_dg = models.LongStringField(
         label='Вспомните, пожалуйста, свое решение о том отдавать или брать деньги у участника Б, с которым вы были в паре. Чем вы руководствовались при принятии вашего решения?')
-
-    reason_reveal_d = models.LongStringField(
+    keyword_dg_1 = models.StringField()
+    keyword_dg_2 = models.StringField()
+    keyword_dg_3 = models.StringField()
+    reason_reveal = models.LongStringField(
         label="""Вспомните, пожалуйста, ваше решение относительно того, узнавать или не узнавать ответ участника Б. Чем вы руководствовались при принятии вашего решения?""")
-
+    keyword_rev_1 = models.StringField()
+    keyword_rev_2 = models.StringField()
+    keyword_rev_3 = models.StringField()
     # Comprehension questions
-    cq1_d = models.IntegerField(label=C.CQ_EGO_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
-    cq1_r = models.IntegerField(label=C.CQ_ALTER_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
-    cq2_d = models.IntegerField(label=C.CQ_EGO_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
-    cq2_r = models.IntegerField(label=C.CQ_ALTER_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
-    cq3_d = models.IntegerField(label=C.CQ_EGO_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
-    cq3_r = models.IntegerField(label=C.CQ_ALTER_LABEL, choices=CQ_CHOICES,
-                                widget=widgets.RadioSelectHorizontal)
+    cq1_ego = models.IntegerField(label=Constants.CQ_EGO_LABEL, choices=CQ_CHOICES,
+                                  widget=widgets.RadioSelectHorizontal)
+    cq1_alter = models.IntegerField(label=Constants.CQ_ALTER_LABEL, choices=CQ_CHOICES,
+                                    widget=widgets.RadioSelectHorizontal)
+    cq2_ego = models.IntegerField(label=Constants.CQ_EGO_LABEL, choices=CQ_CHOICES,
+                                  widget=widgets.RadioSelectHorizontal)
+    cq2_alter = models.IntegerField(label=Constants.CQ_ALTER_LABEL, choices=CQ_CHOICES,
+                                    widget=widgets.RadioSelectHorizontal)
+    cq3_ego = models.IntegerField(label=Constants.CQ_EGO_LABEL, choices=CQ_CHOICES,
+                                  widget=widgets.RadioSelectHorizontal)
+    cq3_alter = models.IntegerField(label=Constants.CQ_ALTER_LABEL, choices=CQ_CHOICES,
+                                    widget=widgets.RadioSelectHorizontal)
 
     #   other   main variables
     reveal_order = models.StringField()
-    ego_endowment = models.IntegerField()
-    alter_endowment = models.IntegerField()
+    egoendowment = models.IntegerField()
+    alterendowment = models.IntegerField()
     # BELIEFS:
-    average_dg_belief = models.IntegerField()
-    own_dg_belief = models.IntegerField()
-    vl_pro_belief = models.IntegerField(min=0, max=100) # shares of those who will reveal if PRO
-    vl_contra_belief = models.IntegerField(min=0, max=100) # shares of those who will reveal if CONTRA
-
+    reveal_belief = models.IntegerField(min=0, max=100)
+    dg_belief_ra = models.IntegerField()
+    dg_belief_rb_nonrev = models.IntegerField()
+    dg_belief_rb_rev_diff = models.IntegerField()
+    dg_belief_rb_rev_same = models.IntegerField()
+    dg_belief_fr_diff = models.IntegerField()
+    dg_belief_fr_same = models.IntegerField()
     proportion = models.IntegerField(min=0, max=100, label='')
     # DEMOGRAPHICS
-
-    age = models.IntegerField(label='Укажите ваш возраст:', widget=widgets.RadioSelect)
-    education = models.IntegerField(
+    religion = models.IntegerField(label="""
+    Насколько сильно вы верите в существование Бога? (укажите свой ответ в диапазоне от 1 = совсем нет 5 = очень сильно)
+    """, choices=range(1, 6), widget=widgets.RadioSelectHorizontal)
+    political = models.IntegerField(label="""
+    Ниже представлена 7-балльная шкала, на которой политические взгляды, которых могут придерживаться люди, расположены от крайне либеральных (слева) до крайне консервативных (справа). Куда бы вы поставили себя на этой шкале?
+    """, choices=range(0, 8), widget=widgets.RadioSelectHorizontal)
+    age = models.StringField(label='Укажите ваш возраст:', choices=AGE_CHOICES, widget=widgets.RadioSelect)
+    education = models.StringField(
         label="Какой самый высокий уровень школы вы закончили или какую высшую степень вы получили?",
         choices=EDUCATION_CHOICES, widget=widgets.RadioSelect)
-    gender = models.IntegerField(label='Укажите ваш пол:',
-                                 choices=GENDER_CHOICES, widget=widgets.RadioSelect)
-
-    income = models.IntegerField(
+    gender = models.StringField(label='Укажите ваш пол:',
+                                choices=GENDER_CHOICES, widget=widgets.RadioSelect)
+    marital = models.StringField(label='В настоящий момент вы:',
+                                 choices=MARITAL_CHOICES, widget=widgets.RadioSelect)
+    employment = models.StringField(label='В настоящий момент вы:',
+                                    choices=EMPLOYMENT_CHOICES, widget=widgets.RadioSelect)
+    income = models.StringField(
         label="Какое высказывание наиболее точно описывает финансовое положение вашей семьи?",
         choices=INCOME_CHOICES,
         widget=widgets.RadioSelect()
     )
-    # some binary socio-econ vars
-    is_fully_employed = models.BooleanField()
-    is_married = models.BooleanField()
-    is_retired = models.BooleanField()
-    is_student = models.BooleanField()
-    is_government_worker = models.BooleanField()
-
     # Demand and clarity
     demand = models.LongStringField()
     instructions_clarity = models.IntegerField(label="""
@@ -255,31 +193,31 @@ def dg_decision_choices(player):
     return [(i, f(i)) for i in ints]
 
 
-def cq1_d_error_message(player, value):
+def cq1_ego_error_message(player, value):
     if value != 50:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
 
 
-def cq1_r_error_message(player, value):
+def cq1_alter_error_message(player, value):
     if value != 100:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
 
 
-def cq2_d_error_message(player, value):
+def cq2_ego_error_message(player, value):
     if value != 100:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
 
 
-def cq2_r_error_message(player, value):
+def cq2_alter_error_message(player, value):
     if value != 50:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
 
 
-def cq3_d_error_message(player, value):
+def cq3_ego_error_message(player, value):
     if value != 150:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
 
 
-def cq3_r_error_message(player, value):
+def cq3_alter_error_message(player, value):
     if value != 0:
-        return C.ERR_MSG
+        return Constants.ERR_MSG
